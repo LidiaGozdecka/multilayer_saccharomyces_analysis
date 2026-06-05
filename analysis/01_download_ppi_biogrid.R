@@ -42,7 +42,7 @@ my_response <- my_query %>%
 #record raw data into a file
 
 #this will be the place whre i save data
-saving_path <- here("data", "raw", "raw_data_ppi_Scerevisiae.txt")
+saving_path <- here("data", "raw", "raw_data_ppi_Scerevisiae.tsv")
 
 resp_body_raw(my_response) %>% 
   writeBin(saving_path)
