@@ -23,7 +23,7 @@ my_query <- request(url_biogrid) %>%
     accesskey=api_key,
     taxId="559292", #id for S.cerevisiae
     format="tab2", #tabular data
-    includeInteractors="true" #full info on proteins
+    includeInteractors="false" #full info on proteins
   )
 
 
@@ -37,18 +37,17 @@ my_response <- my_query %>%
 
 #tab2 to tekst rozdizelony tabulatorammi
 
-#dealing with the response
-data_text <- resp_body_string(my_response)
 
 
 #record raw data into a file
 
 #this will be the place whre i save data
-saving_path <- here("data", "raw", "raw_data_ppi_Scerevisiae.txt")
+saving_path <- here("data", "raw", "raw_data_ppi_Scerevisiae_small.tsv")
+
+resp_body_raw(my_response) %>% 
+  writeBin(saving_path)
 
 
-
-write_lines(data_text, saving_path)
 cat("Yippie! The data has been downloaded and saved. \n")
 
 

@@ -8,3 +8,40 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+```{r}
+library(httr2)
+library(readr)
+library(dotenv)
+library(here)
+
+```
+
+
+Reading the data i downloaded with the 01 and o2 scripts (API in 01, hyperlink to flatfile in 02)
+
+```{r}
+file_01 <- read_tsv("../data/raw/raw_data_ppi_Scerevisiae.txt")
+file_02 <- read_tsv("../data/raw/raw_yeast_grn_tflink.gz")
+```
+
+
+```{r}
+files <- list(file_01, file_02)
+
+for(i in seq_along(files)){
+  if(is.data.frame(files[[i]])){
+    cat("File", i , "loaded correctly :DD\n")
+  }else{
+    cat("File", i, "NOT loaded as a dataframe :((\n")
+  }
+}
+
+
+```
+
+```{r}
+View(file_01)
+
+
+```
