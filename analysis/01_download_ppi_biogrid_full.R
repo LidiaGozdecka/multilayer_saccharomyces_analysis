@@ -23,7 +23,9 @@ my_query <- request(url_biogrid) %>%
     accesskey=api_key,
     taxId="559292", #id for S.cerevisiae
     format="tab2", #tabular data
-    includeInteractors="true" #full info on proteins
+    includeInteractors="true", #full info on proteins
+    includeHeader="true",
+    interSpeciesExcluded="true"
   )
 
 
@@ -42,7 +44,7 @@ my_response <- my_query %>%
 #record raw data into a file
 
 #this will be the place whre i save data
-saving_path <- here("data", "raw", "raw_data_ppi_Scerevisiae.tsv")
+saving_path <- here("data", "raw", "raw_data_ppi_Scerevisiae_full.tsv")
 
 resp_body_raw(my_response) %>% 
   writeBin(saving_path)

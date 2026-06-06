@@ -23,7 +23,9 @@ my_query <- request(url_biogrid) %>%
     accesskey=api_key,
     taxId="559292", #id for S.cerevisiae
     format="tab2", #tabular data
-    includeInteractors="false" #full info on proteins
+    includeInteractors="false", #full info on proteins
+    includeHeader="true",
+    interSpeciesExcluded="true"
   )
 
 
