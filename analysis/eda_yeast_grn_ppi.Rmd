@@ -154,14 +154,14 @@ ppi_df <- data.frame(
   actor1 = ppi_edges$from,
   layer1 = "PPI",
   actor2 = ppi_edges$to,
-  layer2 = "PPI",
+  layer2 = "PPI"
 )
 
 grn_df <- data.frame(
   actor1 = grn_edges$from,
   layer1 = "GRN",
-  actor2 = grn_edges$to
-  
+  actor2 = grn_edges$to,
+  layer2="GRN"
 )
 
 
@@ -171,4 +171,151 @@ add_edges_ml(yeast_ml,grn_df)
 
 yeast_ml
 summary(yeast_ml)
+```
+
+Teraz wybiore niewielki fragment sieci do wizualizacji - wybieram wierzhcolk ktore istnieją w obu warstwach i mają dużo sąsiadów
+
+```{r}
+shared_nodes <- intersect(grn_nodes, ppi_nodes)
+
+top_hubs <- ppi_edges %>% 
+  filter(from %in% shared_nodes & to %in% shared_nodes) %>% 
+  tidyr::pivot_longer(cols=c(from,to), values_to="node") %>% 
+  count(node, sort=TRUE) %>% 
+  slice_head(n=10) %>% 
+  pull(node)
+
+top_hubs
+```
+
+buduje podgraf - wezly top hubs i ich sasiedzi zarowno w ppi jak i w grn
+
+```{r}
+ppi_neighbors <- ppi_edges %>% 
+  filter(from %in% top_hubs | to %in% top_hubs) %>% 
+  {union(.$from, .$to)}
+
+grn_neighbors <- grn_edges %>% 
+  filter(from %in% top_hubs | to %in% top_hubs) %>% 
+  {union(.$from, .$to)}
+
+
+subgraph_nodes <- union(top_hubs, intersect(ppi_neighbors, grn_neighbors))
+
+length(subgraph_nodes)
+  
+```
+
+Buduję podgraf i jego wizualizacje:
+
+```{r}
+ppi_sub <- ppi_edges %>% 
+  filter(from %in% subgraph_nodes & to %in% subgraph_nodes) %>% 
+  mutate(layer="PPI")
+
+grn_sub <- grn_edges %>% 
+  filter(from %in% subgraph_nodes & to %in% subgraph_nodes) %>% 
+  mutate(layer="GRN")
+
+
+all_sub <- bind_rows(ppi_sub, grn_sub)
+
+g_sub <- graph_from_data_frame(
+  d = all_sub %>% select(from, to, layer),
+  directed=TRUE,
+  vertices=data.frame(name=subgraph_nodes)
+)
+
+
+#coloring edges by layer
+E(g_sub)$color <- ifelse(E(g_sub)$layer == "PPI","#E67F99", "#56B4E1")
+
+
+#colroing nodes hub or no hub
+
+V(g_sub)$color <- ifelse(V(g_sub)$name %in% top_hubs, "#F55E99", "#999999")
+V(g_sub)$size <- ifelse(V(g_sub)$name %in% top_hubs,24, 12)
+
+
+#ppi should be undirected
+E(g_sub)$arrow.size <- ifelse(E(g_sub)$layer == "PPI", 0, 0.3)
+```
+
+visualization:
+
+UWAGA loops sa istotne, ale tu ich nie pokazuje dla czyetlnosci
+
+```{r, graph viz}
+set.seed(2026)
+
+g_sub_clean <- simplify(g_sub, remove.loops = TRUE, remove.multiple = FALSE)
+
+E(g_sub_clean)$arrow.size <- ifelse(E(g_sub_clean)$layer == "PPI", 0, 0.25)
+E(g_sub_clean)$width <- ifelse(E(g_sub_clean)$layer == "PPI", 1.5, 0.8)
+
+
+coords <- layout_with_kk(
+  g_sub_clean
+)
+
+coors <- coords * 6
+png(
+  here("analysis", "analysis_outputs", 
+   "trial_vis_yeast_tophubs_flat.png"),
+       width=1600, height=1200, res=300)
+plot(g_sub_clean,
+    vertex.label = V(g_sub_clean)$name,
+    vertex.label.cex=0.7,
+    vertex.label.color = "black",
+    vertex.label.dist=1.2,
+    vertex.frame.color="white",
+   # edge.curved       = ifelse(E(g_sub_clean)$layer == "GRN", 0.3, 0),
+    edge.arrow.size = 0.3,
+    layout = coords,
+    main = "Top PPI hubs + shared neighbors; PPI=orange, GRN=blue",
+    margin=c(0.1,0.1,0.1,0.1)
+)
+legend("bottomleft",
+       legend = c("PPI (fizyczna)", "GRN (regulacja)", "Hub", "Nie-hub"),
+       col    = c("#E69F00", "#56B4E9", "#D55E00", "#999999"),
+       lty    = c(1, 1, NA, NA),
+       pch    = c(NA, NA, 19, 19),
+       pt.cex = 1,
+       bty    = "n",
+       cex    = 0.3)
+dev.off()
+
+
+```
+
+wersja z loops:
+
+```{r}
+set.seed(2026)
+
+E(g_sub)$arrow.size <- ifelse(E(g_sub)$layer == "PPI", 0, 0.25)
+E(g_sub)$width <- ifelse(E(g_sub)$layer == "PPI", 1.5, 0.8)
+
+
+plot(g_sub,
+     vertex.label = V(g_sub)$name,
+     vertex.label.cex=0.7,
+     vertex.label.color = "black",
+     vertex.label.dist=1.2,
+     vertex.frame.color="white",
+     # edge.curved       = ifelse(E(g_sub)$layer == "GRN", 0.3, 0),
+     edge.arrow.size = 0.3,
+     layout = layout_with_fr(g_sub),
+     main = "Top PPI hubs + shared neighbors; PPI=orange, GRN=blue",
+     margin=c(0.1,0.1,0.1,0.1)
+)
+legend("bottomleft",
+       legend = c("PPI (fizyczna)", "GRN (regulacja)", "Hub", "Nie-hub"),
+       col    = c("#E69F00", "#56B4E9", "#D55E00", "#999999"),
+       lty    = c(1, 1, NA, NA),
+       pch    = c(NA, NA, 19, 19),
+       pt.cex = 1.5,
+       bty    = "n",
+       cex    = 0.8)
+
 ```
