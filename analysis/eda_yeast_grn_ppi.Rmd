@@ -15,7 +15,7 @@ library(readr)
 library(dotenv)
 library(here)
 library(dplyr)
-
+library(tidyverse)
 library(igraph)
 ```
 
@@ -318,4 +318,290 @@ legend("bottomleft",
        bty    = "n",
        cex    = 0.8)
 
+```
+
+teraz buduje obiekt muxviz i bede robic wizualizacje wielowarstwowa:
+
+```{r}
+library(muxViz)
+
+all_nodes <- union(ppi_edges$from, grn_edges$to) %>% 
+  union(grn_edges$from) %>% 
+  union(ppi_edges$to)
+
+g_ppi <- graph_from_data_frame(
+  ppi_edges %>% select(from, to),
+  directed=FALSE,
+  vertices=data.frame(name=all_nodes)
+)
+
+g_grn <- graph_from_data_frame(
+  grn_edges %>% select(from, to),
+  directed=TRUE,
+  vertices=data.frame(name=all_nodes)
+)
+
+
+g_list <- list(g_ppi, g_grn)
+
+
+#ten sam układ węzłów dla obu warstw
+lay <- layoutMultiplex(
+  g_list,
+  layout="fr",
+  ggplot.format=FALSE,
+  box=TRUE
+)
+
+# tylko węzły które faktycznie są w subgrafie
+g_ppi_sub <- induced_subgraph(g_ppi, 
+                              vids = V(g_ppi)[V(g_ppi)$name %in% subgraph_nodes])
+
+g_grn_sub <- induced_subgraph(g_grn, 
+                              vids = V(g_grn)[V(g_grn)$name %in% subgraph_nodes])
+
+g_list_sub <- list(g_ppi_sub, g_grn_sub)
+
+
+
+#wizualziacja
+
+plot_multiplex(
+  g.list       = g_list_sub,
+  layer.colors = c("#E69F99", "#96B4ED"),
+  edge.colors  = "auto",
+  node.colors  = "auto",
+  node.size.values = 0.5,
+  node.alpha   = 0.9,
+  edge.alpha   = 0.6,
+  layout       = "fr",
+  show.legend  = TRUE
+)
+```
+
+niestety, powyzsza wizualizacja nie ma interlayer edges - sprobuje stowrzyc inna za pomoca pakietu mully
+
+```{r}
+library(mully)
+```
+
+```{r}
+library(mully)
+
+test <- mully("test")
+
+test <- addLayer(test, c("PPI", "GRN"))
+
+test <- addNode(test, "CHD1_PPI", "PPI")
+test <- addNode(test, "CKA1_PPI", "PPI")
+
+test <- addEdge(
+  test,
+  "CHD1_PPI",
+  "CKA1_PPI",
+  attributes = list(type = "intra_PPI")
+)
+
+
+test <- mully("test")
+
+test <- addLayer(test, "PPI")
+
+test <- addNode(test, "A", "PPI")
+test <- addNode(test, "B", "PPI")
+
+test <- addEdge(
+  test,
+  "A",
+  "B",
+  attributes = list(name = "edge1")
+)
+
+
+```
+
+```{r}
+library(mully)
+
+
+  
+ppi_sub_unique <- ppi_sub |>
+  dplyr::distinct(from, to, .keep_all = TRUE) |> 
+  rowwise() |>
+  mutate(
+    a = min(from, to),
+    b = max(from, to)
+  ) |>
+  ungroup() |>
+  distinct(a, b, .keep_all = TRUE)
+
+yeast_mully <- mully("yeast_multilayer")
+yeast_mully <- addLayer(yeast_mully, c("PPI", "GRN"))
+
+# węzły PPI - suffix _PPI
+for(node in ppi_nodes) {
+  yeast_mully <- addNode(yeast_mully, paste0(node, "_PPI"), "PPI")
+}
+
+# węzły GRN - suffix _GRN
+for(node in grn_nodes) {
+  yeast_mully <- addNode(yeast_mully, paste0(node, "_GRN"), "GRN")
+}
+
+# krawędzie PPI
+for(i in 1:nrow(ppi_sub_unique)) {
+  node_start <- paste0(ppi_sub_unique$from[i], "_PPI")
+  #print(node_start)
+  node_dest <- paste0(ppi_sub_unique$to[i],   "_PPI")
+  #print(node_dest)
+  yeast_mully <- addEdge(yeast_mully,
+                         nodeStart =node_start,
+                         nodeDest =node_dest ,
+                         attributes = list(name = "intra_PPI"))
+}
+
+# krawędzie GRN
+for(i in 1:nrow(grn_sub)) {
+  yeast_mully <- addEdge(yeast_mully,
+                         paste0(grn_sub$from[i], "_GRN"),
+                         paste0(grn_sub$to[i],   "_GRN"),
+                         attributes = list(name = "intra_GRN"))
+}
+
+# interlayer edges - węzły wspólne
+shared <- intersect(ppi_nodes, grn_nodes)
+for(node in shared) {
+  yeast_mully <- addEdge(yeast_mully,
+                         paste0(node, "_PPI"),
+                         paste0(node, "_GRN"),
+                         attributes = list(type = "interlayer"))
+}
+
+print(yeast_mully)
+```
+
+teraz probuje zoribuc 3d:
+
+```{r}
+library(threejs)
+g_sub_clean2 <- g_sub_clean
+E(g_sub_clean2)$width <- 1
+g3d <- graphjs(
+  g_sub_clean2,
+  vertexsize = 1,
+  labels = TRUE
+)
+```
+
+export widgety html:
+
+```{r}
+library(htmlwidgets)
+
+saveWidget(
+  g3d,
+  file = here("analysis/analysis_outputs/network3d.html"),
+  selfcontained = TRUE
+)
+```
+
+wersja b - export do gephi:
+
+```{r}
+library(igraph)
+
+ppi_edges2 <- ppi_edges %>%
+  transmute(from, to)
+
+grn_edges2 <- grn_edges %>%
+  transmute(from, to)
+
+g_ppi <- graph_from_data_frame(ppi_edges2, directed = TRUE)
+g_grn <- graph_from_data_frame(grn_edges2, directed = TRUE)
+
+# merge multilayer (simple approach)
+g <- graph.union(g_ppi, g_grn, byname = TRUE)
+
+nodes_df <- data.frame(
+  Id = V(g)$name,
+  layer = ifelse(grepl("_PPI$", V(g)$name), "PPI", "GRN")
+)
+
+edges_df <- data.frame(
+  Source = as.character(head_of(g, E(g))),
+  Target = as.character(tail_of(g, E(g)))
+)
+
+
+
+
+
+write.csv(nodes_df,
+          here("analysis/analysis_outputs/nodes.csv"),
+          row.names = FALSE)
+
+write.csv(edges_df,
+          here("analysis/analysis_outputs/edges.csv"),
+          row.names = FALSE)
+```
+
+\
+
+nodes_df \<- data.frame( Id = vertices(yeast_mully)\$name )
+
+edges_df \<- data.frame( Source = edges(yeast_mully)$V1,
+  Target = edges(yeast_mully)$V2 )
+
+\
+
+pseud-3d R-em:
+
+```{r}
+coords <- layout_with_fr(g_sub_clean)
+
+node_layer <- data.frame(
+  name = V(g_sub_clean)$name
+)
+
+node_layer$layer <- ifelse(
+  node_layer$name %in% grn_nodes & node_layer$name %in% ppi_nodes,
+  "BOTH",
+  ifelse(node_layer$name %in% ppi_nodes, "PPI", "GRN")
+)
+
+z <- ifelse(node_layer$layer == "PPI", 0,
+            ifelse(node_layer$layer == "GRN", 1, 0.5))
+
+plot_ly(
+  x = coords[,1],
+  y = coords[,2],
+  z = z,
+  type = "scatter3d",
+  mode = "markers+text",
+  text = V(g_sub_clean)$name
+)
+```
+
+```{r}
+library(igraph)
+library(plotly)
+
+ppi_nodes <- paste0(ppi_nodes, "_PPI")
+grn_nodes <- paste0(grn_nodes, "_GRN")
+
+coords <- layout_with_fr(g_sub_clean)
+
+z <- ifelse(
+  V(g_sub_clean)$layer == "PPI",
+  0,
+  1
+)
+
+plot_ly(
+  x = coords[,1],
+  y = coords[,2],
+  z = z,
+  type = "scatter3d",
+  mode = "markers+text"
+)
 ```
