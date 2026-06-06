@@ -14,34 +14,98 @@ library(httr2)
 library(readr)
 library(dotenv)
 library(here)
-
+library(dplyr)
 ```
 
 
 Reading the data i downloaded with the 01 and o2 scripts (API in 01, hyperlink to flatfile in 02)
 
 ```{r}
-file_01 <- read_tsv("../data/raw/raw_data_ppi_Scerevisiae.txt")
+
+file_00 <- read_tsv("../data/raw/raw_data_ppi_Scerevisiae_small.tsv")
+file_01 <- read_tsv("../data/raw/raw_data_ppi_Scerevisiae_full.tsv")
 file_02 <- read_tsv("../data/raw/raw_yeast_grn_tflink.gz")
 ```
 
 
 ```{r}
-files <- list(file_01, file_02)
+files <- list(file_00, file_01, file_02)
 
 for(i in seq_along(files)){
   if(is.data.frame(files[[i]])){
-    cat("File", i , "loaded correctly :DD\n")
+    cat("File", i-1 , " exists and was loaded correctly :DD\n")
   }else{
-    cat("File", i, "NOT loaded as a dataframe :((\n")
+    cat("File", i-1, "does not exist or was NOT loaded as a dataframe :((\n")
   }
 }
 
 
 ```
-
+Wczytuję PPI z danych z BioGRID (werjsa z dodatkowym info) i poprawiam nazwy kolumn na łatwiejsze do pisania w kodzie
 ```{r}
-View(file_01)
+ppi_raw <- read_tsv(
+  here("data", "raw", "raw_data_ppi_Scerevisiae_full.tsv"),
+  col_names=c(
+     "biogrid_interaction_id",
+    "entrez_a", "entrez_b",
+    "biogrid_id_a", "biogrid_id_b",
+    "systematic_name_a", "systematic_name_b",  # ← to są nazwy YLR418C etc.
+    "official_symbol_a", "official_symbol_b",  # ← to są CDC73, CTR9 etc.
+    "synonyms_a", "synonyms_b",
+    "experimental_system", "experimental_system_type",
+    "author", "pubmed_id",
+    "organism_a", "organism_b",
+    "throughput", "score", "modification",
+    "phenotypes", "qualifications", "tags", "source_db"
+  ),
+  skip=1
+)
+
+
+ppi_edges <- ppi_raw %>% 
+  filter(experimental_system_type=="physical") %>% 
+  transmute(
+    from=systematic_name_a,
+    to = systematic_name_b,
+    symbol_from=official_symbol_a,
+    symbol_to=official_symbol_b,
+    interaction_type=experimental_system,
+    detection_method=experimental_system,
+    throughput=throughput,
+    source="BioGRID",
+    layer="PPI"
+  )
 
 
 ```
+
+Wczytuję warstwę GRN z danych z TFLink.net
+```{r}
+grn_raw <- file_02
+
+grn_edges <- grn_raw %>% 
+  transmute(
+    from=Name.TF,
+    to=Name.Target,
+    source="TFLink",
+    layer="GRN"
+  )
+```
+
+Składam to w jeden graf 2 warstwowy
+```{r}
+
+all_edges <- bind_rows(ppi_edges, grn_edges)
+
+```
+
+
+```{r}
+
+library(igraph)
+
+g <- graph_from_data_frame(all_edges, directed = TRUE)
+
+#plot(g, vertex.size = 3, vertex.label = NA)
+```
+
