@@ -15,8 +15,9 @@ library(readr)
 library(dotenv)
 library(here)
 library(dplyr)
-```
 
+library(igraph)
+```
 
 Reading the data i downloaded with the 01 and o2 scripts (API in 01, hyperlink to flatfile in 02)
 
@@ -26,7 +27,6 @@ file_00 <- read_tsv("../data/raw/raw_data_ppi_Scerevisiae_small.tsv")
 file_01 <- read_tsv("../data/raw/raw_data_ppi_Scerevisiae_full.tsv")
 file_02 <- read_tsv("../data/raw/raw_yeast_grn_tflink.gz")
 ```
-
 
 ```{r}
 files <- list(file_00, file_01, file_02)
@@ -41,7 +41,9 @@ for(i in seq_along(files)){
 
 
 ```
+
 Wczytuję PPI z danych z BioGRID (werjsa z dodatkowym info) i poprawiam nazwy kolumn na łatwiejsze do pisania w kodzie
+
 ```{r}
 ppi_raw <- read_tsv(
   here("data", "raw", "raw_data_ppi_Scerevisiae_full.tsv"),
@@ -65,10 +67,10 @@ ppi_raw <- read_tsv(
 ppi_edges <- ppi_raw %>% 
   filter(experimental_system_type=="physical") %>% 
   transmute(
-    from=systematic_name_a,
-    to = systematic_name_b,
-    symbol_from=official_symbol_a,
-    symbol_to=official_symbol_b,
+    name_from=systematic_name_a,
+    name_to = systematic_name_b,
+    from=official_symbol_a,
+    to=official_symbol_b,
     interaction_type=experimental_system,
     detection_method=experimental_system,
     throughput=throughput,
@@ -80,6 +82,7 @@ ppi_edges <- ppi_raw %>%
 ```
 
 Wczytuję warstwę GRN z danych z TFLink.net
+
 ```{r}
 grn_raw <- file_02
 
@@ -93,19 +96,79 @@ grn_edges <- grn_raw %>%
 ```
 
 Składam to w jeden graf 2 warstwowy
+
 ```{r}
 
 all_edges <- bind_rows(ppi_edges, grn_edges)
 
 ```
 
+Sprawdzam czy wszystko jest OK i jakie cechy warstwy mają z osobna:
+
+```{r}
+all_edges %>% 
+  count(layer)
+ 
+
+all_edges %>% 
+  filter(is.na(from) | is.na(to))
+#nie ma braków :DD
+
+#czy na pewno w obu warstwach są nazwy w jednej konwencji
+
+head(all_edges %>% filter(layer=="PPI") %>% pull(from))
+head(all_edges %>% filter(layer=="GRN") %>% pull(from))
+
+
+# czy teraz węzły się pokrywają między warstwami?
+ppi_nodes <- union(ppi_edges$from, ppi_edges$to)
+grn_nodes <- union(grn_edges$from, grn_edges$to)
+
+length(intersect(ppi_nodes, grn_nodes))  # ile wspólnych węzłów
+length(ppi_nodes)
+length(grn_nodes)
+```
+
+Przechodzę do składania grafu 2 warstwowego - z multinet
 
 ```{r}
 
-library(igraph)
-
-g <- graph_from_data_frame(all_edges, directed = TRUE)
-
-#plot(g, vertex.size = 3, vertex.label = NA)
+library(multinet)
 ```
 
+```{r}
+
+#creating an empty ml graph object
+yeast_ml <- ml_empty()
+
+
+#adding layers, one directed oen undirected
+add_layers_ml(yeast_ml,
+              layers=c("PPI", "GRN"),
+              directed=c(FALSE, TRUE)
+)
+
+
+#adding ppi edges
+ppi_df <- data.frame(
+  actor1 = ppi_edges$from,
+  layer1 = "PPI",
+  actor2 = ppi_edges$to,
+  layer2 = "PPI",
+)
+
+grn_df <- data.frame(
+  actor1 = grn_edges$from,
+  layer1 = "GRN",
+  actor2 = grn_edges$to
+  
+)
+
+
+add_edges_ml(yeast_ml, ppi_df)
+add_edges_ml(yeast_ml,grn_df)
+
+
+yeast_ml
+summary(yeast_ml)
+```
